@@ -1,0 +1,16 @@
+__pycache__/
+venv/
+*.pyc
+*.pyo
+*.pyd
+.env
+.DS_Store
+*.mp3
+*.wav
+*.zip
+*.bin
+*.pt
+*.onnx
+recordings/
+uploads/
+

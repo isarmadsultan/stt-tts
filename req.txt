@@ -1,0 +1,21 @@
+fastapi
+uvicorn[standard]
+whisper
+torch      # make sure to install the right torch for your system (CPU GPU variants)
+streamlit
+requests
+audio-recorder-streamlit
+python-multipart
+numpy<2
+sounddevice
+wavio
+openai-whisper
+openai
+chromadb
+langchain_huggingface
+langchain_community
+langchain_core
+sentence-transformers
+langchain_chroma
+langchain_openai
+rapidfuzz

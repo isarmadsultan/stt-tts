@@ -1,4 +1,3 @@
-# backend/app.py
 import os
 import tempfile
 import wave
@@ -18,8 +17,7 @@ from config import API_HOST, API_PORT, API_PROTOCOL
 load_dotenv()
 
 app = FastAPI(title="Voice API with Whisper + RAG Agent")
-
-
+history = []
 
 @app.on_event("startup")
 def load_resources():
@@ -30,7 +28,7 @@ def load_resources():
     if not getattr(app.state, "whisper_model_loaded", False):
         import whisper
 
-        model_name = os.getenv("WHISPER_MODEL", "large-v3")
+        model_name = "medium"  # Fixed to medium model
         gpu_index = int(os.getenv("CUDA_DEVICE", "0"))
         device = f"cuda:{gpu_index}" if torch.cuda.is_available() else "cpu"
 
@@ -59,21 +57,9 @@ def load_resources():
             print(f"   → GPU Memory: {mem_alloc}/{mem_total} GB used")
             print(f"   → FP16 Enabled: {app.state.use_fp16}")
             print(f"   → Model Size: {model_name}")
-
-
-
-
-
         except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                print(f"⚠️ GPU OOM with '{model_name}'. Falling back to 'medium' model...")
-                torch.cuda.empty_cache()
-                model = whisper.load_model("medium", device=device)
-                app.state.whisper_model = model
-                app.state.use_fp16 = False
-                app.state.whisper_model_loaded = True
-            else:
-                raise e
+            print(f"❌ Failed to load Whisper model: {e}")
+            raise e
 
     # === Initialize ChromaDB ===
     if not getattr(app.state, "chroma_loaded", False):
@@ -156,6 +142,8 @@ def transcribe_with_whisper_bytes(file_bytes: bytes) -> str:
 
 @app.post("/upload-voice/")
 async def upload_voice(file: UploadFile = File(...)):
+    global history  # Declare that we're using the global history variable
+    
     if file.content_type not in {"audio/wav", "audio/x-wav"}:
         raise HTTPException(status_code=400, detail="Only WAV files are allowed")
 
@@ -176,9 +164,10 @@ async def upload_voice(file: UploadFile = File(...)):
     # === Step 3: Retrieve documents and generate AI response (RAG) ===
     rag_start = time.time()
     collection = app.state.chroma_collection
-    ai_response = generate_answer(transcription, collection)
+    ai_response, history = generate_answer(transcription, collection, history)
     rag_end = time.time()
-
+    print(f'History is: {history}')
+    
     # === Step 4: Text-to-Speech (TTS) generation ===
     tts_start = time.time()
     try:
@@ -211,15 +200,4 @@ async def upload_voice(file: UploadFile = File(...)):
             "tts_audio_path": tts_path,
             "timing_breakdown": timing_info,
         }
-    )
-
-if __name__ == "__main__":
-    print(f"🚀 Starting FastAPI on {API_BASE_URL}")
-    uvicorn.run(
-        app,  # 👈 Use this since app is in this same file
-        host=API_HOST,
-        port=int(API_PORT),
-        reload=True,
-        ssl_keyfile="key.pem" if API_PROTOCOL == "https" else None,
-        ssl_certfile="cert.pem" if API_PROTOCOL == "https" else None
     )

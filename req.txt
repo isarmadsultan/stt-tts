@@ -19,3 +19,4 @@ sentence-transformers
 langchain_chroma
 langchain_openai
 rapidfuzz
+langchain_weaviate

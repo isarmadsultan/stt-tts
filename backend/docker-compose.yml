@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate
+    restart: on-failure:0
+    ports:
+      - "9000:8080"    # HTTP/REST API
+      - "50051:50051"  # gRPC port
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+      # GPU Configuration
+      CUDA_VISIBLE_DEVICES: '0'
+      ASYNC_INDEXING: 'true'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  weaviate_data:

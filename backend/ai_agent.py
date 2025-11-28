@@ -1,19 +1,18 @@
 import os
 from openai import OpenAI
 from langchain_openai import OpenAIEmbeddings
-
-
+import weaviate
 class RAGRetriever:
     """
-    Handles embedding queries and retrieving relevant documents from ChromaDB.
+    Handles embedding queries and retrieving relevant documents from Weaviate (GPU-optimized).
     """
 
     def __init__(self, model_name: str = "text-embedding-3-small"):
         self.embeddings = OpenAIEmbeddings(model=model_name)
 
-    def get_relevant_context(self, query: str, collection, top_k: int = 30):
+    def get_relevant_context(self, query: str, weaviate_client, collection_name: str = "Document", top_k: int = 30):
         """
-        Retrieve top_k relevant documents from ChromaDB.
+        Retrieve top_k relevant documents from Weaviate using GPU-accelerated search.
         """
         print(f"\n[DEBUG] Fetching context for query: '{query}'")
 
@@ -21,16 +20,24 @@ class RAGRetriever:
         query_embedding = self.embeddings.embed_query(query)
         print("[DEBUG] Query embedding generated successfully.")
 
-        # Query ChromaDB
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
+        # Get collection
+        collection = weaviate_client.collections.get(collection_name)
+
+        # GPU-optimized vector search with auto-tuned parameters
+        results = collection.query.near_vector(
+            near_vector=query_embedding,
+            limit=top_k,
+            return_properties=["content", "source"],
+            return_metadata=["distance", "certainty"]  # Get similarity scores
         )
 
-        docs = results.get("documents", [[]])[0] if results else []
-        print(f"[DEBUG] Retrieved {len(docs)} document(s) from collection.")
+        # Extract documents from results
+        docs = [obj.properties.get("content", "") for obj in results.objects]
+        print(f"[DEBUG] Retrieved {len(docs)} document(s) from Weaviate (GPU-accelerated).")
 
         return docs
+
+
 class QueryRewriter:
     """
     Expands and rewrites queries using OpenAI LLM based on conversation history.
@@ -81,16 +88,18 @@ Rewritten query:
 
         return completion.choices[0].message.content.strip()
 
+
 class RAGAgent:
     """
     Generates contextual, RAG-based conversational answers using:
     - Query expansion
-    - Embedding-based retrieval
+    - Embedding-based retrieval from Weaviate
     - LLM answer generation
     """
 
-    def __init__(self, collection, api_key: str = None):
-        self.collection = collection
+    def __init__(self, weaviate_client, collection_name: str = "Document", api_key: str = None):
+        self.weaviate_client = weaviate_client
+        self.collection_name = collection_name
         api_key = api_key or os.getenv("OPENAI_API_KEY")
 
         self.rewriter = QueryRewriter(api_key)
@@ -107,8 +116,12 @@ class RAGAgent:
         # 1. Expand query using conversation context
         expanded_query = self.rewriter.expand(query, history)
 
-        # 2. Retrieve supporting documents
-        relevant_docs = self.retriever.get_relevant_context(expanded_query, self.collection)
+        # 2. Retrieve supporting documents from Weaviate
+        relevant_docs = self.retriever.get_relevant_context(
+            expanded_query, 
+            self.weaviate_client,
+            self.collection_name
+        )
         context_text = "\n\n".join(relevant_docs).strip()
 
         # Build conversation history text

@@ -1,9 +1,24 @@
+"""
+Updated Main Application with SOLID TTS Integration
+====================================================
+
+Key Changes:
+1. Integrated new SOLID-compliant TTS service
+2. Added proper dependency injection
+3. Enhanced error handling and cleanup
+4. Improved streaming pipeline coordination
+5. Better separation of concerns
+"""
+
 import os
 import tempfile
 import time
+import threading
+import queue
+import pygame
 from typing import Dict, List, Tuple, Optional
 import torch
-import chromadb
+import asyncio
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -11,8 +26,21 @@ import whisper
 from contextlib import asynccontextmanager
 import weaviate
 from weaviate.classes.init import AdditionalConfig, Timeout
-from backend.ai_agent import RAGAgent
-from backend.tts_service import TTSService
+from pathlib import Path
+
+from backend.ai_agent import StreamingRAGAgent
+
+# Import new SOLID TTS components
+from backend.tts_service import (
+    StreamingTTSService,
+    TTSServiceFactory,
+    TTSConfig,
+    AudioChunk,
+    ITTSProvider,
+    IFileStorage,
+    OpenAITTSProvider,
+    LocalFileStorage
+)
 
 load_dotenv()
 
@@ -57,7 +85,6 @@ class WhisperModelLoader:
             raise
 
 
-# Replace ChromaDBInitializer with WeaviateInitializer
 class WeaviateInitializer:
     """Single Responsibility: Initialize and manage Weaviate connection"""
     
@@ -99,16 +126,85 @@ class WeaviateInitializer:
             raise
 
 
-# Update ServiceContainer
+class TTSServiceInitializer:
+    """
+    Single Responsibility: Initialize TTS service with proper configuration
+    D - Dependency Inversion: Can inject different providers/storage
+    """
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        provider: Optional[ITTSProvider] = None,
+        storage: Optional[IFileStorage] = None,
+        config: Optional[TTSConfig] = None
+    ):
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.provider = provider
+        self.storage = storage
+        self.config = config or self._load_config_from_env()
+    
+    def _load_config_from_env(self) -> TTSConfig:
+        """Load TTS configuration from environment variables"""
+        return TTSConfig(
+            voice=os.getenv("TTS_VOICE", "alloy"),
+            model=os.getenv("TTS_MODEL", "tts-1"),
+            max_concurrent_tasks=int(os.getenv("TTS_MAX_CONCURRENT", "5")),
+            max_retries=int(os.getenv("TTS_MAX_RETRIES", "2")),
+            output_dir=Path(os.getenv("TTS_OUTPUT_DIR", tempfile.gettempdir())) / "tts_audio"
+        )
+    
+    def initialize(self) -> StreamingTTSService:
+        """Initialize and return TTS service"""
+        print("\n🔄 Initializing TTS Service...")
+        
+        try:
+            # Use factory if no custom components provided
+            if self.provider is None and self.storage is None:
+                # Check environment for optimization preference
+                optimization = os.getenv("TTS_OPTIMIZATION", "default")
+                
+                if optimization == "throughput":
+                    service = TTSServiceFactory.create_high_throughput(self.api_key)
+                    print("✅ TTS Service initialized (High Throughput mode)")
+                elif optimization == "quality":
+                    service = TTSServiceFactory.create_high_quality(self.api_key)
+                    print("✅ TTS Service initialized (High Quality mode)")
+                else:
+                    service = StreamingTTSService(
+                        api_key=self.api_key,
+                        config=self.config
+                    )
+                    print("✅ TTS Service initialized (Default mode)")
+            else:
+                # Use custom components
+                service = StreamingTTSService(
+                    tts_provider=self.provider,
+                    file_storage=self.storage,
+                    api_key=self.api_key,
+                    config=self.config
+                )
+                print("✅ TTS Service initialized (Custom configuration)")
+            
+            return service
+        
+        except Exception as e:
+            print(f"❌ TTS Service initialization failed: {e}")
+            raise
+
+
 class ServiceContainer:
     """Single Responsibility: Manage application-level service instances"""
     
     def __init__(self):
         self.whisper_loader = None
-        self.weaviate_initializer = None  # Changed from chroma_initializer
+        self.weaviate_initializer = None
+        self.tts_initializer = None
+        
         self.whisper_model = None
         self.whisper_fp16 = False
-        self.weaviate_client = None  # Changed from chroma_collection
+        self.weaviate_client = None
+        self.tts_service = None
     
     def initialize_all(self):
         """Initialize all required services"""
@@ -122,6 +218,11 @@ class ServiceContainer:
         # Initialize Weaviate
         self.weaviate_initializer = WeaviateInitializer()
         self.weaviate_client = self.weaviate_initializer.initialize()
+        
+        # Initialize TTS
+        self.tts_initializer = TTSServiceInitializer()
+        self.tts_service = self.tts_initializer.initialize()
+
 
 # ============================================================
 # 2. AUDIO PROCESSING LAYER
@@ -209,31 +310,50 @@ class ConversationManager:
         """Clear conversation history"""
         self.history = []
 
-# Update RAGService
-class RAGService:
-    """Single Responsibility: Handle RAG-based question answering"""
+
+class StreamingRAGService:
+    """Single Responsibility: Handle RAG-based question answering with streaming"""
     
-    def __init__(self, weaviate_client: weaviate.WeaviateClient):  # Changed parameter type
-        self.rag_agent = RAGAgent(weaviate_client)  # Pass weaviate_client instead
+    def __init__(self, weaviate_client: weaviate.WeaviateClient):
+        self.rag_agent = StreamingRAGAgent(weaviate_client)
     
-    def get_answer(self, question: str, history: List) -> Tuple[str, List]:
-        """Get AI answer and updated history"""
-        return self.rag_agent.answer(question, history)
+    async def get_answer_streaming(self, question: str, history: List):
+        """Get AI answer stream"""
+        async for chunk in self.rag_agent.answer_streaming(question, history):
+            yield chunk
+    
+    async def get_full_answer(self, question: str, history: List) -> Tuple[str, List]:
+        """Get complete AI answer and updated history"""
+        return await self.rag_agent.answer(question, history)
 
 
-class TTSServiceWrapper:
-    """Single Responsibility: Handle Text-to-Speech generation"""
+class AudioChunkCollector:
+    """
+    Single Responsibility: Collect and manage audio chunks during streaming.
+    Maintains order and provides access to chunk metadata.
+    """
     
     def __init__(self):
-        self.tts_service = TTSService()
+        self.chunks: List[AudioChunk] = []
+        self.chunk_count = 0
     
-    def generate_speech(self, text: str, filename: str = "ai_response_tts.mp3") -> Optional[str]:
-        """Generate speech audio from text"""
-        try:
-            return self.tts_service.generate(text, filename)
-        except Exception as e:
-            print(f"⚠️ TTS generation failed: {e}")
-            return None
+    def add_chunk(self, chunk: AudioChunk) -> None:
+        """Add audio chunk to collection"""
+        self.chunks.append(chunk)
+        self.chunk_count += 1
+    
+    def get_ordered_paths(self) -> List[str]:
+        """Get audio file paths in order"""
+        # Chunks are already ordered by design
+        return [str(chunk.file_path) for chunk in self.chunks]
+    
+    def get_total_duration(self) -> float:
+        """Get estimated total duration of all chunks"""
+        return sum(chunk.duration_estimate for chunk in self.chunks)
+    
+    def get_count(self) -> int:
+        """Get number of chunks"""
+        return self.chunk_count
 
 
 # ============================================================
@@ -262,16 +382,76 @@ class TimingMetricsCollector:
         return self.metrics.copy()
 
 
-class VoicePipelineOrchestrator:
-    """Single Responsibility: Coordinate the voice processing pipeline"""
+class AudioPlayer:
+    """
+    Single Responsibility: Play audio files sequentially from a queue.
+    Thread-safe audio playback manager.
+    """
+    
+    def __init__(self):
+        self.queue = queue.Queue()
+        self.playback_enabled = False
+        
+        try:
+            pygame.mixer.init()
+            self.playback_enabled = True
+            print("✅ Audio playback enabled")
+        except pygame.error as e:
+            print(f"⚠️ Audio device not found. Playback disabled: {e}")
+        
+        self.thread = threading.Thread(target=self._play_worker, daemon=True)
+        self.thread.start()
+    
+    def play(self, file_path: str) -> None:
+        """Add file to playback queue"""
+        if self.playback_enabled:
+            self.queue.put(file_path)
+    
+    def _play_worker(self) -> None:
+        """Worker thread to play audio sequentially"""
+        while True:
+            file_path = self.queue.get()
+            if file_path is None:
+                break
+            
+            try:
+                if self.playback_enabled and pygame.mixer.get_init():
+                    pygame.mixer.music.load(file_path)
+                    pygame.mixer.music.play()
+                    # Wait until playback finishes
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+            except Exception as e:
+                print(f"⚠️ Error playing {file_path}: {e}")
+            finally:
+                self.queue.task_done()
+    
+    def stop(self) -> None:
+        """Stop playback and cleanup"""
+        self.queue.put(None)
+        if self.playback_enabled:
+            pygame.mixer.music.stop()
+
+
+class StreamingVoicePipelineOrchestrator:
+    """
+    Single Responsibility: Coordinate the streaming voice processing pipeline.
+    
+    Key Improvements:
+    - Uses new SOLID TTS service with proper cleanup
+    - Better error handling throughout pipeline
+    - Automatic resource cleanup via context manager
+    - Detailed metrics collection
+    """
     
     def __init__(
         self,
         transcriber: WhisperTranscriber,
         conversation_manager: ConversationManager,
-        rag_service: RAGService,
-        tts_service: TTSServiceWrapper,
-        file_handler: AudioFileHandler
+        rag_service: StreamingRAGService,
+        tts_service: StreamingTTSService,
+        file_handler: AudioFileHandler,
+        enable_playback: bool = True
     ):
         self.transcriber = transcriber
         self.conversation_manager = conversation_manager
@@ -279,10 +459,21 @@ class VoicePipelineOrchestrator:
         self.tts_service = tts_service
         self.file_handler = file_handler
         self.metrics_collector = TimingMetricsCollector()
+        self.audio_player = AudioPlayer() if enable_playback else None
     
-    async def process(self, file_bytes: bytes) -> Dict:
-        """Execute the complete voice processing pipeline"""
+    async def process_streaming(self, file_bytes: bytes) -> Dict:
+        """
+        Execute the streaming voice processing pipeline with parallelization.
+        
+        Pipeline:
+        1. Save & Transcribe audio (sequential)
+        2. RAG + TTS streaming (parallel)
+        3. Playback (async)
+        4. History update (sequential)
+        5. Cleanup (automatic)
+        """
         temp_path = None
+        chunk_collector = AudioChunkCollector()
         
         try:
             # Step 1: Save audio to temp file
@@ -295,27 +486,68 @@ class VoicePipelineOrchestrator:
             transcription = self.transcriber.transcribe(temp_path)
             self.metrics_collector.end("transcription")
             
-            # Step 3: Get AI response
-            self.metrics_collector.start("rag_processing")
+            if not transcription:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No transcription generated from audio"
+                )
+            
+            # Step 3: Parallel RAG + TTS pipeline with automatic cleanup
+            self.metrics_collector.start("parallel_rag_tts")
+            
             history = self.conversation_manager.get_history()
-            ai_response, updated_history = self.rag_service.get_answer(transcription, history)
+            
+            # Create async generator for RAG streaming
+            text_stream = self.rag_service.get_answer_streaming(transcription, history)
+            
+            # Use context manager for automatic TTS cleanup
+            async with self.tts_service.streaming_session(text_stream) as tts_stream:
+                async for chunk in tts_stream:
+                    # Collect chunk metadata
+                    chunk_collector.add_chunk(chunk)
+                    
+                    # Play immediately for real-time experience
+                    if self.audio_player:
+                        self.audio_player.play(str(chunk.file_path))
+                    
+                    print(f"🎵 Chunk {chunk.chunk_id} ready: {chunk.text[:50]}...")
+            
+            self.metrics_collector.end("parallel_rag_tts")
+            
+            # Step 4: Get full answer for history update
+            # (This is cached in the RAG agent, so it's fast)
+            self.metrics_collector.start("history_update")
+            full_answer, updated_history = await self.rag_service.get_full_answer(
+                transcription, 
+                history
+            )
             self.conversation_manager.update_history(updated_history)
-            self.metrics_collector.end("rag_processing")
+            self.metrics_collector.end("history_update")
             
-            # Step 4: Generate TTS
-            self.metrics_collector.start("tts_generation")
-            tts_path = self.tts_service.generate_speech(ai_response)
-            self.metrics_collector.end("tts_generation")
-            
+            # Return results with metrics
             return {
                 "transcription": transcription,
-                "ai_response": ai_response,
-                "tts_audio_path": tts_path,
+                "ai_response": full_answer,
+                "tts_audio_paths": chunk_collector.get_ordered_paths(),
+                "num_audio_chunks": chunk_collector.get_count(),
+                "total_audio_duration": chunk_collector.get_total_duration(),
             }
         
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"❌ Pipeline error: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Pipeline processing failed: {str(e)}"
+            )
+        
         finally:
+            # Cleanup input audio file
             if temp_path:
                 self.file_handler.cleanup(temp_path)
+            
+            # Note: TTS chunk cleanup is handled automatically by context manager
 
 
 class ResponseFormatter:
@@ -334,8 +566,21 @@ class ResponseFormatter:
             "content_type": content_type,
             "transcription": pipeline_result["transcription"],
             "ai_response": pipeline_result["ai_response"],
-            "tts_audio_path": pipeline_result["tts_audio_path"],
+            "tts_audio_paths": pipeline_result["tts_audio_paths"],
+            "num_audio_chunks": pipeline_result["num_audio_chunks"],
+            "total_audio_duration": pipeline_result.get("total_audio_duration", 0.0),
             "timing": metrics,
+            "status": "success"
+        }
+    
+    @staticmethod
+    def format_error_response(error: Exception, metrics: Optional[Dict] = None) -> Dict:
+        """Format error response"""
+        return {
+            "status": "error",
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "timing": metrics or {}
         }
 
 
@@ -346,49 +591,70 @@ class ResponseFormatter:
 class VoiceController:
     """Single Responsibility: Handle HTTP requests and coordinate response"""
     
-    def __init__(self, orchestrator: VoicePipelineOrchestrator):
+    def __init__(self, orchestrator: StreamingVoicePipelineOrchestrator):
         self.orchestrator = orchestrator
         self.formatter = ResponseFormatter()
     
     async def handle_upload(self, file: UploadFile) -> Dict:
-        """Handle voice file upload request"""
+        """Handle voice file upload request with streaming pipeline"""
+        
+        # Validate file
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
+        
+        if not file.content_type or not file.content_type.startswith("audio/"):
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid content type: {file.content_type}. Expected audio/*"
+            )
         
         # Start total timing
         total_start = time.time()
         
-        # Read file
-        read_start = time.time()
-        file_bytes = await file.read()
-        read_time = round(time.time() - read_start, 2)
+        try:
+            # Read file
+            read_start = time.time()
+            file_bytes = await file.read()
+            read_time = round(time.time() - read_start, 2)
+            
+            if not file_bytes:
+                raise HTTPException(status_code=400, detail="Empty file uploaded")
+            
+            # Process through streaming pipeline
+            pipeline_result = await self.orchestrator.process_streaming(file_bytes)
+            
+            # Get metrics and add read time
+            metrics = self.orchestrator.metrics_collector.get_metrics()
+            metrics["audio_read_time"] = read_time
+            metrics["total_time"] = round(time.time() - total_start, 2)
+            
+            # Format response
+            return self.formatter.format_voice_response(
+                filename=file.filename,
+                content_type=file.content_type,
+                pipeline_result=pipeline_result,
+                metrics=metrics
+            )
         
-        # Process through pipeline
-        pipeline_result = await self.orchestrator.process(file_bytes)
-        
-        # Get metrics and add read time
-        metrics = self.orchestrator.metrics_collector.get_metrics()
-        metrics["audio_read_time"] = read_time
-        metrics["total_time"] = round(time.time() - total_start, 2)
-        
-        # Format response
-        return self.formatter.format_voice_response(
-            filename=file.filename,
-            content_type=file.content_type,
-            pipeline_result=pipeline_result,
-            metrics=metrics
-        )
+        except HTTPException:
+            raise
+        except Exception as e:
+            metrics = self.orchestrator.metrics_collector.get_metrics()
+            metrics["total_time"] = round(time.time() - total_start, 2)
+            
+            error_response = self.formatter.format_error_response(e, metrics)
+            return error_response
 
 
 # ============================================================
 # 6. FASTAPI APPLICATION SETUP
 # ============================================================
 
-app = FastAPI(title="SRP-Compliant Voice API")
-
 # Global service container
 service_container = ServiceContainer()
 
 # Global orchestrator (initialized after startup)
-orchestrator: Optional[VoicePipelineOrchestrator] = None
+orchestrator: Optional[StreamingVoicePipelineOrchestrator] = None
 controller: Optional[VoiceController] = None
 
 
@@ -397,6 +663,10 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler for startup and shutdown"""
     # Startup
     global orchestrator, controller
+    
+    print("\n" + "="*60)
+    print("🚀 Starting Streaming Voice API with SOLID TTS")
+    print("="*60)
     
     # Initialize infrastructure
     service_container.initialize_all()
@@ -408,49 +678,151 @@ async def lifespan(app: FastAPI):
     )
     
     conversation_manager = ConversationManager()
-    rag_service = RAGService(service_container.weaviate_client)
-    tts_service = TTSServiceWrapper()
+    rag_service = StreamingRAGService(service_container.weaviate_client)
     file_handler = AudioFileHandler()
     
-    # Create orchestrator
-    orchestrator = VoicePipelineOrchestrator(
+    # Check if playback should be enabled
+    enable_playback = os.getenv("ENABLE_AUDIO_PLAYBACK", "true").lower() == "true"
+    
+    # Create orchestrator with new TTS service
+    orchestrator = StreamingVoicePipelineOrchestrator(
         transcriber=transcriber,
         conversation_manager=conversation_manager,
         rag_service=rag_service,
-        tts_service=tts_service,
-        file_handler=file_handler
+        tts_service=service_container.tts_service,  # New SOLID TTS service
+        file_handler=file_handler,
+        enable_playback=enable_playback
     )
     
     # Create controller
     controller = VoiceController(orchestrator)
     
+    print("\n✅ All services initialized successfully")
+    print("="*60 + "\n")
+    
     yield  # Application runs here
     
-    # Shutdown (optional cleanup)
+    # Shutdown
+    print("\n" + "="*60)
+    print("🛑 Shutting down Streaming Voice API")
+    print("="*60)
+    
+    # Stop audio player
+    if orchestrator and orchestrator.audio_player:
+        orchestrator.audio_player.stop()
+        print("🔇 Audio player stopped")
+    
+    # Cleanup TTS service
+    if service_container.tts_service:
+        await service_container.tts_service.cleanup()
+        print("🧹 TTS service cleaned up")
+    
+    # Close Weaviate connection
     if service_container.weaviate_client:
         service_container.weaviate_client.close()
-        print("🔌 Closed Weaviate connection")
+        print("🔌 Weaviate connection closed")
+    
+    print("="*60 + "\n")
 
-# Update FastAPI app initialization
-app = FastAPI(title="SRP-Compliant Voice API", lifespan=lifespan)
 
+# Initialize FastAPI app with lifespan
+app = FastAPI(
+    title="Streaming Voice API with SOLID TTS",
+    description="Voice processing pipeline with RAG and streaming TTS using SOLID principles",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+
+# ============================================================
+# 7. API ENDPOINTS
+# ============================================================
 
 @app.post("/upload-voice/")
 async def upload_voice_route(file: UploadFile = File(...)):
-    """Voice upload endpoint"""
+    """
+    Voice upload endpoint with streaming pipeline.
+    
+    Accepts audio file, transcribes it, generates AI response via RAG,
+    and converts to speech using streaming TTS with parallel processing.
+    """
     if not controller:
-        raise HTTPException(status_code=503, detail="Service not initialized")
+        raise HTTPException(
+            status_code=503, 
+            detail="Service not initialized. Please wait for startup to complete."
+        )
     
     response = await controller.handle_upload(file)
     return JSONResponse(content=response)
 
 
-# Update health_check
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """
+    Health check endpoint.
+    Returns status of all critical services.
+    """
     return {
         "status": "healthy",
-        "whisper_loaded": service_container.whisper_model is not None,
-        "weaviate_loaded": service_container.weaviate_client is not None,  # Changed from chroma_loaded
+        "services": {
+            "whisper": service_container.whisper_model is not None,
+            "weaviate": service_container.weaviate_client is not None,
+            "tts": service_container.tts_service is not None,
+        },
+        "features": {
+            "streaming_enabled": True,
+            "parallel_processing": True,
+            "solid_architecture": True,
+        },
+        "version": "2.0.0"
     }
+
+
+@app.post("/clear-history/")
+async def clear_history():
+    """Clear conversation history"""
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    
+    orchestrator.conversation_manager.clear_history()
+    return {"status": "success", "message": "Conversation history cleared"}
+
+
+@app.get("/conversation-history/")
+async def get_conversation_history():
+    """Get current conversation history"""
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Service not initialized")
+    
+    history = orchestrator.conversation_manager.get_history()
+    return {
+        "status": "success",
+        "history": history,
+        "count": len(history)
+    }
+
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "name": "Streaming Voice API with SOLID TTS",
+        "version": "2.0.0",
+        "architecture": "SOLID principles",
+        "endpoints": {
+            "upload": "/upload-voice/",
+            "health": "/health",
+            "history_clear": "/clear-history/",
+            "history_get": "/conversation-history/"
+        },
+        "features": [
+            "Whisper transcription",
+            "RAG-based AI responses",
+            "Streaming TTS with parallel processing",
+            "Automatic resource cleanup",
+            "SOLID architecture",
+            "Conversation history management"
+        ]
+    }
+
+

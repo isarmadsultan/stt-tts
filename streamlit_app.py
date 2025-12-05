@@ -3,15 +3,12 @@ import os
 import requests
 import time
 import base64
+from pathlib import Path
 from backend.record_voice import record_voice
-from backend.config import API_BASE_URL
 
-API_URL = f"http://127.0.0.1:8000/upload-voice/"
-
+API_URL = "http://127.0.0.1:8000/upload-voice/"
 
 st.title("🎙️ Voice Input Interface")
-
-
 
 if st.button("🎤 Speak Now"):
     filename = "streamlit_voice.wav"
@@ -21,66 +18,126 @@ if st.button("🎤 Speak Now"):
 
     time.sleep(1)
 
-
     if os.path.exists(record_path):
         st.success(f"✅ Recording saved: {record_path}")
         st.audio(record_path, format="audio/wav")
 
         # === Send to backend ===
-        with open(record_path, "rb") as f:
-            files = {"file": (filename, f, "audio/wav")}
+        with st.spinner("🔄 Processing your voice..."):
+            with open(record_path, "rb") as f:
+                files = {"file": (filename, f, "audio/wav")}
 
-            try:
-                response = requests.post(API_URL, files=files, timeout=180)
-                response.raise_for_status()
-            except requests.exceptions.ConnectionError:
-                st.error("❌ Could not connect to the backend API. Please make sure FastAPI is running on port 8000.")
-                st.stop()
-            except requests.exceptions.Timeout:
-                st.error("⚠️ Request timed out. The backend took too long to respond.")
-                st.stop()
+                try:
+                    response = requests.post(API_URL, files=files, timeout=180)
+                    response.raise_for_status()
+                except requests.exceptions.ConnectionError:
+                    st.error("❌ Could not connect to the backend API. Please make sure FastAPI is running on port 8000.")
+                    st.stop()
+                except requests.exceptions.Timeout:
+                    st.error("⚠️ Request timed out. The backend took too long to respond.")
+                    st.stop()
+                except requests.exceptions.HTTPError as e:
+                    st.error(f"❌ Server error: {e}")
+                    if response.text:
+                        st.error(f"Details: {response.text}")
+                    st.stop()
 
         # === Parse response ===
         data = response.json()
+        
+        # Check for error status
+        if data.get("status") == "error":
+            st.error(f"❌ Processing failed: {data.get('error', 'Unknown error')}")
+            st.error(f"Error type: {data.get('error_type', 'N/A')}")
+            with st.expander("📦 Error Details"):
+                st.json(data)
+            st.stop()
 
+        # === Display Transcription ===
+        transcription = data.get("transcription", "")
+        if transcription:
+            st.subheader("📝 Your Question")
+            st.info(transcription)
+
+        # === Display AI Response ===
         st.subheader("🧠 AI Response")
-        st.write(data.get("ai_response", "No response text."))
+        ai_response = data.get("ai_response", "No response text.")
+        st.write(ai_response)
+
+        # === Display Audio Chunk Info ===
+        num_chunks = data.get("num_audio_chunks", 0)
+        total_duration = data.get("total_audio_duration", 0.0)
+        
+        if num_chunks > 0:
+            st.info(f"🎵 Generated {num_chunks} audio chunks (≈{total_duration:.1f}s total)")
 
         # === Display Timing Breakdown ===
-        timing_info = data.get("timing_breakdown")
+        timing_info = data.get("timing")
         if timing_info:
             st.subheader("⏱️ Processing Time Breakdown")
-            st.json(timing_info)
-        elif "processing_time_seconds" in data:
-            st.subheader("⏱️ Total Processing Time")
-            st.write(f"{data['processing_time_seconds']} seconds")
+            
+            # Create a nice formatted display
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Transcription", f"{timing_info.get('transcription', 0)}s")
+            with col2:
+                st.metric("RAG + TTS", f"{timing_info.get('parallel_rag_tts', 0)}s")
+            with col3:
+                st.metric("Total", f"{timing_info.get('total_time', 0)}s")
+            
+            with st.expander("📊 Detailed Timing"):
+                st.json(timing_info)
+
+        # === Play TTS Audio Chunks ===
+        tts_audio_paths = data.get("tts_audio_paths", [])
+        
+        if tts_audio_paths:
+            st.success(f"🔊 Playing AI voice response ({len(tts_audio_paths)} chunks)...")
+            
+            # Play all chunks sequentially
+            for idx, audio_path in enumerate(tts_audio_paths, 1):
+                if os.path.exists(audio_path):
+                    st.caption(f"Chunk {idx}/{len(tts_audio_paths)}")
+                    st.audio(audio_path, format="audio/mp3")
+                else:
+                    st.warning(f"⚠️ Audio chunk {idx} not found: {audio_path}")
+            
+            # Optional: Create a concatenated version for download
+            if len(tts_audio_paths) > 1:
+                with st.expander("💾 Download Options"):
+                    st.info("Individual chunks are played above. Full audio concatenation would require additional processing.")
+        else:
+            st.warning("⚠️ No TTS audio chunks were generated.")
 
         # === Display All Raw Data (for debugging) ===
         with st.expander("📦 Full Response JSON"):
             st.json(data)
 
-        # === Play TTS output if available ===
-        tts_audio_path = data.get("tts_audio_path")
-        if tts_audio_path and os.path.exists(tts_audio_path):
-            st.success("🔊 Playing AI voice response...")
-
-            with open(tts_audio_path, "rb") as audio_file:
-                audio_bytes = audio_file.read()
-                audio_base64 = base64.b64encode(audio_bytes).decode()
-
-            # Auto-play hidden player
-            audio_html = f"""
-                <audio autoplay>
-                    <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                </audio>
-            """
-            st.markdown(audio_html, unsafe_allow_html=True)
-
-            # Optional visible player
-            st.audio(tts_audio_path, format="audio/mp3")
-
-        else:
-            st.warning("⚠️ TTS audio not available or file missing.")
-
     else:
         st.error("❌ Recording file was not created. Please try again.")
+
+
+# === Sidebar Info ===
+with st.sidebar:
+    st.header("ℹ️ About")
+    st.markdown("""
+    This interface uses:
+    - **Whisper** for speech-to-text
+    - **RAG** for AI responses
+    - **Streaming TTS** for voice output
+    
+    The streaming TTS generates multiple audio chunks in parallel for faster response times.
+    """)
+    
+    # Health check
+    try:
+        health = requests.get("http://127.0.0.1:8000/health", timeout=5).json()
+        st.success("✅ Backend is healthy")
+        
+        with st.expander("🔍 Service Status"):
+            for service, status in health.get("services", {}).items():
+                icon = "✅" if status else "❌"
+                st.text(f"{icon} {service.capitalize()}")
+    except:
+        st.error("❌ Cannot connect to backend")

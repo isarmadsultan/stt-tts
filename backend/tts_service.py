@@ -17,10 +17,7 @@ from openai import AsyncOpenAI
 
 @dataclass
 class TTSConfig:
-    """
-    S - Single Responsibility: Configuration management only
-    Immutable configuration for TTS service
-    """
+
     voice: str = "alloy"
     model: str = "tts-1"
     max_concurrent_tasks: int = 5
@@ -226,10 +223,7 @@ class SentenceTextChunker:
 
 
 class RetryStrategy:
-    """
-    S - Single Responsibility: Retry logic only
-    O - Open/Closed: Can be extended with different backoff strategies
-    """
+
     
     def __init__(self, max_retries: int = 2, backoff_base: float = 1.5):
         self.max_retries = max_retries

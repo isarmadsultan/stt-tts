@@ -52,13 +52,14 @@ load_dotenv()
 class WhisperModelLoader:
     """Single Responsibility: Load and manage Whisper model lifecycle"""
     
-    def __init__(self, model_name: str = "medium", gpu_index: int = 0):
+    def __init__(self, model_name: str = "large", gpu_index: int = 0):
         self.model_name = model_name
         self.gpu_index = gpu_index
         self.model = None
         self.fp16 = False
         self.device = None
     
+
     def load(self) -> Tuple[whisper.Whisper, bool]:
         """Load Whisper model and return model + fp16 flag"""
         if self.model:
@@ -208,8 +209,8 @@ class ServiceContainer:
     
     def initialize_all(self):
         """Initialize all required services"""
-        # Load Whisper
-        model_name = os.getenv("WHISPER_MODEL", "medium")
+        # Load Whisper with LARGE model
+        model_name = os.getenv("WHISPER_MODEL", "large")
         gpu_index = int(os.getenv("CUDA_DEVICE", "0"))
         
         self.whisper_loader = WhisperModelLoader(model_name, gpu_index)
@@ -222,6 +223,7 @@ class ServiceContainer:
         # Initialize TTS
         self.tts_initializer = TTSServiceInitializer()
         self.tts_service = self.tts_initializer.initialize()
+
 
 
 # ============================================================
@@ -388,9 +390,11 @@ class AudioPlayer:
     Thread-safe audio playback manager.
     """
     
-    def __init__(self):
+    def __init__(self, first_audio_callback=None):
         self.queue = queue.Queue()
         self.playback_enabled = False
+        self.first_audio_callback = first_audio_callback
+        self.first_audio_played = False
         
         try:
             pygame.mixer.init()
@@ -418,6 +422,12 @@ class AudioPlayer:
                 if self.playback_enabled and pygame.mixer.get_init():
                     pygame.mixer.music.load(file_path)
                     pygame.mixer.music.play()
+                    
+                    # Trigger callback when first audio starts playing
+                    if not self.first_audio_played and self.first_audio_callback:
+                        self.first_audio_callback()
+                        self.first_audio_played = True
+                    
                     # Wait until playback finishes
                     while pygame.mixer.music.get_busy():
                         time.sleep(0.1)
@@ -431,6 +441,10 @@ class AudioPlayer:
         self.queue.put(None)
         if self.playback_enabled:
             pygame.mixer.music.stop()
+    
+    def reset_first_audio_flag(self) -> None:
+        """Reset the first audio flag for next request"""
+        self.first_audio_played = False
 
 
 class StreamingVoicePipelineOrchestrator:
@@ -471,9 +485,28 @@ class StreamingVoicePipelineOrchestrator:
         3. Playback (async)
         4. History update (sequential)
         5. Cleanup (automatic)
+        
+        Tracks two key metrics:
+        - time_to_first_audio: Time from transcription end to first audio playback (agent response time)
+        - total_time: Time for entire pipeline completion
         """
         temp_path = None
         chunk_collector = AudioChunkCollector()
+        first_audio_callback_triggered = False
+        
+        # Define callback for first audio playback
+        def on_first_audio_start():
+            nonlocal first_audio_callback_triggered
+            if not first_audio_callback_triggered:
+                self.metrics_collector.end("time_to_first_audio")
+                first_audio_callback_triggered = True
+                print("🎯 First audio started playing!")
+        
+        # Reset audio player flag for this request
+        if self.audio_player:
+            self.audio_player.reset_first_audio_flag()
+            # Update callback
+            self.audio_player.first_audio_callback = on_first_audio_start
         
         try:
             # Step 1: Save audio to temp file
@@ -492,7 +525,10 @@ class StreamingVoicePipelineOrchestrator:
                     detail="No transcription generated from audio"
                 )
             
-            # Step 3: Parallel RAG + TTS pipeline with automatic cleanup
+            # Step 3: Start tracking time to first audio (from end of transcription)
+            self.metrics_collector.start("time_to_first_audio")
+            
+            # Step 4: Parallel RAG + TTS pipeline with automatic cleanup
             self.metrics_collector.start("parallel_rag_tts")
             
             history = self.conversation_manager.get_history()
@@ -514,7 +550,11 @@ class StreamingVoicePipelineOrchestrator:
             
             self.metrics_collector.end("parallel_rag_tts")
             
-            # Step 4: Get full answer for history update
+            # If no audio player or playback disabled, manually end the timer
+            if not self.audio_player and not first_audio_callback_triggered:
+                self.metrics_collector.end("time_to_first_audio")
+            
+            # Step 5: Get full answer for history update
             # (This is cached in the RAG agent, so it's fast)
             self.metrics_collector.start("history_update")
             full_answer, updated_history = await self.rag_service.get_full_answer(
@@ -523,6 +563,13 @@ class StreamingVoicePipelineOrchestrator:
             )
             self.conversation_manager.update_history(updated_history)
             self.metrics_collector.end("history_update")
+            
+            # Wait a bit for audio callback to trigger if it hasn't yet
+            if self.audio_player and not first_audio_callback_triggered:
+                await asyncio.sleep(0.2)
+                if not first_audio_callback_triggered:
+                    # Fallback: manually end the timer
+                    self.metrics_collector.end("time_to_first_audio")
             
             # Return results with metrics
             return {

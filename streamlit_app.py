@@ -76,24 +76,29 @@ if st.button("🎤 Speak Now"):
         if timing_info:
             st.subheader("⏱️ Processing Time Breakdown")
             
-            # Create a nice formatted display
-            col1, col2, col3 = st.columns(3)
+            # Create a nice formatted display with 4 columns
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
                 st.metric("Transcription", f"{timing_info.get('transcription', 0)}s")
             with col2:
-                st.metric("RAG + TTS", f"{timing_info.get('parallel_rag_tts', 0)}s")
+                # Highlight the Agent Response Time (time to first audio)
+                agent_response_time = timing_info.get('time_to_first_audio', 0)
+                st.metric("🎯 Agent Response", f"{agent_response_time}s", 
+                         help="Time from STT completion to first audio playback")
             with col3:
+                st.metric("RAG + TTS", f"{timing_info.get('parallel_rag_tts', 0)}s")
+            with col4:
                 st.metric("Total", f"{timing_info.get('total_time', 0)}s")
             
-            with st.expander("📊 Detailed Timing"):
+            with st.expander("� Detailed Timing"):
                 st.json(timing_info)
 
         # === Play TTS Audio Chunks ===
         tts_audio_paths = data.get("tts_audio_paths", [])
         
         if tts_audio_paths:
-            st.success(f"🔊 Playing AI voice response ({len(tts_audio_paths)} chunks)...")
+            st.success(f"�🔊 Playing AI voice response ({len(tts_audio_paths)} chunks)...")
             
             # Play all chunks sequentially
             for idx, audio_path in enumerate(tts_audio_paths, 1):
@@ -128,6 +133,10 @@ with st.sidebar:
     - **Streaming TTS** for voice output
     
     The streaming TTS generates multiple audio chunks in parallel for faster response times.
+    
+    **Key Metrics:**
+    - **Agent Response Time**: Time from STT completion to first audio playback
+    - **Total Time**: Complete end-to-end processing time
     """)
     
     # Health check

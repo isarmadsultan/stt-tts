@@ -1,0 +1,141 @@
+@startuml sequence_upload
+
+skinparam {
+    BackgroundColor white
+    shadowing true
+    RoundCorner 10
+    DefaultFontName Helvetica
+    DefaultFontSize 9
+    MaxMessageSize 150
+}
+
+skinparam participant {
+    BackgroundColor #BBDEFB
+    BorderColor #1976D2
+    FontColor #0D47A1
+}
+
+skinparam actor {
+    BackgroundColor #FFF8E1
+    BorderColor #F57C00
+    FontColor #E65100
+}
+
+skinparam sequence {
+    ArrowColor #546E7A
+    LifeLineBorderColor #78909C
+    LifeLineBackgroundColor #ECEFF1
+}
+
+skinparam note {
+    BackgroundColor #C8E6C9
+    BorderColor #388E3C
+    FontColor #1B5E20
+}
+
+title **DOM-Based Content Update Flow**\nAutomated Synchronization
+
+actor "Website" as website #BBDEFB
+participant "DOM\nScanner" as scanner #E1BEE7
+participant "Snapshot\nStorage" as storage #FFF9C4
+participant "Vision\nComparator" as vision #E1BEE7
+participant "Update\nOrchestrator" as orchestrator #C8E6C9
+participant "Content\nClassifier" as classifier #C8E6C9
+participant "Schema\nProcessor" as schema #FFF8E1
+participant "Structured\nDB" as postgres #FFCCBC
+participant "Vector\nDB" as vectordb #FFF9C4
+actor "Owner" as owner #FFF8E1
+
+== Scheduled DOM Capture ==
+
+scanner -> website : Fetch page\n(Playwright)
+activate scanner #E1BEE7
+website --> scanner : HTML + DOM
+
+scanner -> scanner : Extract DOM tree\nGenerate fingerprint
+
+scanner -> storage : Store snapshot\n{dom, timestamp, hash}
+activate storage #FFF9C4
+storage --> scanner : snapshot_id
+deactivate storage
+
+deactivate scanner
+
+== Change Detection ==
+
+storage -> vision : Compare snapshots\n{current, baseline}
+activate vision #E1BEE7
+
+vision -> vision : Structural diff\n(DOM tree analysis)
+vision -> vision : Visual comparison\n(screenshot diff)
+vision -> vision : Semantic analysis\n(text changes)
+
+alt Changes Detected
+    vision -> orchestrator : Change report\n{type, elements, severity}
+    activate orchestrator #C8E6C9
+    
+    note right of vision #FFFDE7
+      Change Types:
+      - content_update
+      - structural_change
+      - content_added
+      - content_removed
+    end note
+
+else No Significant Changes
+    vision --> storage : Update baseline timestamp
+    deactivate vision
+end
+
+== Targeted Content Update ==
+
+orchestrator -> classifier : Classify changed content
+activate classifier #C8E6C9
+classifier --> orchestrator : {structured | unstructured | semi}
+deactivate classifier
+
+alt Structured Content
+    orchestrator -> schema : Extract schema fields
+    activate schema #FFF8E1
+    schema -> postgres : Update fields\n(delta only)
+    activate postgres #FFCCBC
+    postgres --> schema : Confirmed
+    deactivate postgres
+    schema --> orchestrator : Update complete
+    deactivate schema
+end
+
+alt Unstructured Content
+    orchestrator -> vectordb : Re-embed chunks\n(affected only)
+    activate vectordb #FFF9C4
+    vectordb --> orchestrator : Embeddings updated
+    deactivate vectordb
+end
+
+alt Semi-Structured Content
+    orchestrator -> schema : Extract structured
+    orchestrator -> vectordb : Embed unstructured
+end
+
+orchestrator -> storage : Log change\n{before, after, timestamp}
+
+opt Manual Approval Mode
+    orchestrator -> owner : Change approval request
+    owner --> orchestrator : Approve / Reject
+end
+
+orchestrator --> storage : Update baseline
+deactivate orchestrator
+
+note right of orchestrator #C8E6C9
+  **Intelligent Updates:**
+  - Only affected content
+  - No full re-ingestion
+  - Audit trail maintained
+end note
+
+note bottom #ECEFF1
+  **VocalizeWeb SRS v2.0** | January 2026
+end note
+
+@enduml

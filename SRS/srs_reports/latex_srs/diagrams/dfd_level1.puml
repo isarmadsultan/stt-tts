@@ -1,0 +1,97 @@
+@startuml dfd_level1
+!theme plain
+
+skinparam {
+    BackgroundColor white
+    DefaultFontName "Latin Modern Roman"
+    DefaultFontSize 9
+    DefaultFontColor #2C3E50
+    Shadowing false
+    RoundCorner 4
+    Padding 8
+    ArrowColor #34495E
+    ArrowThickness 1.2
+    Linetype ortho
+}
+
+skinparam rectangle {
+    BackgroundColor<<process>> #E8F5E9
+    BorderColor<<process>> #43A047
+    BackgroundColor<<external>> #E8F4F8
+    BorderColor<<external>> #2E86AB
+    BackgroundColor<<datastore>> #FFF3E0
+    BorderColor<<datastore>> #FB8C00
+    BackgroundColor<<structured>> #FFEBEE
+    BorderColor<<structured>> #E53935
+    BorderThickness 1.2
+    FontSize 8
+}
+
+skinparam arrow {
+    Color #34495E
+    FontColor #2C3E50
+    FontSize 7
+    Thickness 1.2
+}
+
+' ===== EXTERNAL ENTITIES =====
+rectangle "User\n//text · voice//" <<external>> as user
+rectangle "Owner\n//admin//" <<external>> as owner
+rectangle "Websites\n//source//" <<external>> as websites
+
+' ===== CORE PROCESSES =====
+rectangle "**1.0**\nQuery\nRouter" <<process>> as p1
+rectangle "**2.0**\nVoice\nProcessor" <<process>> as p2
+rectangle "**3.0**\nContent\nClassifier" <<process>> as p3
+rectangle "**4.0**\nRAG\nPipeline" <<process>> as p4
+rectangle "**5.0**\nResponse\nGenerator" <<process>> as p5
+
+' ===== CONTENT MANAGEMENT =====
+rectangle "**6.0**\nDOM\nScanner" <<process>> as p6
+rectangle "**7.0**\nVision\nCompare" <<process>> as p7
+rectangle "**8.0**\nUpdate\nOrchestrator" <<process>> as p8
+rectangle "**9.0**\nSchema\nProcessor" <<process>> as p9
+
+' ===== DATA STORES =====
+rectangle "D1\nSessions" <<datastore>> as d1
+rectangle "D2\nVectors" <<datastore>> as d2
+rectangle "D3\nSnapshots" <<datastore>> as d3
+rectangle "D4\nStructured" <<structured>> as d4
+rectangle "D5\nToggles" <<datastore>> as d5
+
+' ===== USER QUERY FLOW =====
+user --> p1 : query
+p1 --> p2 : audio
+p2 --> p1 : transcript
+p1 --> p3 : context
+p3 --> p4 : classified
+p4 --> d2 : search
+d2 --> p4 : chunks
+p4 --> d4 : query
+d4 --> p4 : data
+p4 --> p5 : context
+p5 --> p2 : text
+p2 --> user : audio
+p5 --> user : text
+
+' ===== SESSION MANAGEMENT =====
+p1 <--> d1 : session
+p5 --> d1 : log
+
+' ===== DOM AUTO-UPDATE =====
+websites --> p6 : DOM
+p6 --> d3 : store
+d3 --> p7 : compare
+p7 --> p8 : changes
+p8 --> p3 : classify
+p8 --> p9 : extract
+p9 --> d4 : update
+p8 --> d2 : embed
+
+' ===== CONFIGURATION =====
+owner --> p6 : config
+owner --> d5 : toggles
+d5 --> p1 : check
+p7 --> owner : alerts
+
+@enduml

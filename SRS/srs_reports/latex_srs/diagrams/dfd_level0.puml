@@ -1,0 +1,78 @@
+@startuml dfd_level0
+!theme plain
+
+skinparam {
+    BackgroundColor white
+    DefaultFontName "Latin Modern Roman"
+    DefaultFontSize 9
+    DefaultFontColor #2C3E50
+    Shadowing false
+    RoundCorner 4
+    Padding 8
+    ArrowColor #34495E
+    ArrowThickness 1.2
+    Linetype ortho
+}
+
+skinparam rectangle {
+    BackgroundColor<<external>> #E8F4F8
+    BorderColor<<external>> #2E86AB
+    BackgroundColor<<system>> #FFF3E0
+    BorderColor<<system>> #FB8C00
+    BackgroundColor<<service>> #F0E6F6
+    BorderColor<<service>> #6A4C93
+    BackgroundColor<<data>> #FFEBEE
+    BorderColor<<data>> #E53935
+    BorderThickness 1.2
+    FontSize 8
+}
+
+skinparam arrow {
+    Color #34495E
+    FontColor #2C3E50
+    FontSize 7
+    Thickness 1.2
+}
+
+' ===== EXTERNAL ENTITIES =====
+rectangle "End User\n//text · voice//" <<external>> as user
+rectangle "Website Owner\n//admin//" <<external>> as owner
+rectangle "Target Websites\n//content source//" <<external>> as websites
+
+' ===== CORE SYSTEM =====
+rectangle "**VocalizeWeb**\n//RAG Platform//" <<system>> as system
+
+' ===== EXTERNAL SERVICES =====
+rectangle "OpenAI\n//STT · LLM · TTS//" <<service>> as openai
+rectangle "Vision Model\n//change detection//" <<service>> as vision
+
+' ===== DATA STORES =====
+rectangle "Vector DB\n//embeddings//" <<data>> as vectordb
+rectangle "PostgreSQL\n//structured//" <<data>> as postgres
+
+' ===== USER INTERACTIONS =====
+user --> system : queries
+system --> user : responses
+
+' ===== OWNER INTERACTIONS =====
+owner --> system : config
+system --> owner : analytics
+
+' ===== WEBSITE SCRAPING =====
+websites --> system : DOM content
+
+' ===== AI SERVICES =====
+system --> openai : API calls
+openai --> system : results
+
+system --> vision : compare DOM
+vision --> system : changes
+
+' ===== DATA LAYER =====
+system --> vectordb : embed · search
+vectordb --> system : context
+
+system --> postgres : store · query
+postgres --> system : data
+
+@enduml

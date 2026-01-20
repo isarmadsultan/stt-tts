@@ -1,0 +1,142 @@
+@startuml sequence_query
+
+skinparam {
+    BackgroundColor white
+    shadowing true
+    RoundCorner 10
+    DefaultFontName Helvetica
+    DefaultFontSize 9
+    MaxMessageSize 150
+}
+
+skinparam participant {
+    BackgroundColor #BBDEFB
+    BorderColor #1976D2
+    FontColor #0D47A1
+}
+
+skinparam actor {
+    BackgroundColor #C8E6C9
+    BorderColor #388E3C
+    FontColor #1B5E20
+}
+
+skinparam sequence {
+    ArrowColor #546E7A
+    LifeLineBorderColor #78909C
+    LifeLineBackgroundColor #ECEFF1
+}
+
+skinparam note {
+    BackgroundColor #FFF8E1
+    BorderColor #FFA726
+    FontColor #E65100
+}
+
+title **Multi-Modal Query Processing**\nText and Voice Flow
+
+actor "User" as user #C8E6C9
+participant "Widget\n(React)" as widget #BBDEFB
+participant "API\nGateway" as gateway #E1BEE7
+participant "Query\nRouter" as router #BBDEFB
+participant "Voice\nProcessor" as voice #E1BEE7
+participant "Content\nClassifier" as classifier #C8E6C9
+participant "Structured\nDB" as postgres #FFCCBC
+participant "Vector\nDB" as vectordb #FFF9C4
+participant "LLM\n(GPT-4o)" as llm #E1BEE7
+
+== Text Query Path ==
+
+user -> widget : Types query
+activate widget #BBDEFB
+
+widget -> gateway : POST /query\n{text, session_id}
+activate gateway #E1BEE7
+
+gateway -> gateway : Validate API key\nCheck feature toggles
+
+gateway -> router : Route query
+activate router #BBDEFB
+
+router -> classifier : Classify query intent
+activate classifier #C8E6C9
+classifier --> router : {type: hybrid}
+deactivate classifier
+
+alt Structured Query Component
+    router -> postgres : SQL query\n(schema fields)
+    activate postgres #FFCCBC
+    postgres --> router : Structured results
+    deactivate postgres
+end
+
+alt Semantic Query Component
+    router -> vectordb : Similarity search
+    activate vectordb #FFF9C4
+    vectordb --> router : Top-K chunks
+    deactivate vectordb
+end
+
+router -> llm : Generate response\n(context + query)
+activate llm #E1BEE7
+llm --> router : Response text
+deactivate llm
+
+router --> gateway : {response, sources}
+deactivate router
+
+gateway --> widget : JSON response
+deactivate gateway
+
+widget --> user : Display response
+deactivate widget
+
+== Voice Query Path ==
+
+user -> widget : Speaks query
+activate widget #BBDEFB
+
+widget -> widget : Capture audio\n(MediaStream)
+
+widget -> gateway : POST /voice-query\n{audio, session_id}
+activate gateway #E1BEE7
+
+gateway -> voice : Process audio
+activate voice #E1BEE7
+
+voice -> voice : Whisper STT
+note right of voice #FFFDE7
+  Transcription
+  < 2 seconds
+end note
+
+voice --> gateway : {transcript}
+
+gateway -> router : Route query
+activate router #BBDEFB
+note right : Same flow as\ntext query
+router --> gateway : {response}
+deactivate router
+
+gateway -> voice : Synthesize speech
+voice -> voice : OpenAI TTS
+voice --> gateway : {audio_stream}
+deactivate voice
+
+gateway --> widget : Audio + text response
+deactivate gateway
+
+widget -> widget : Play audio
+widget --> user : Voice response
+deactivate widget
+
+note right of widget #FFFDE7
+  Target: < 5 seconds
+  end-to-end for voice
+end note
+
+note bottom #ECEFF1
+  **VocalizeWeb SRS v2.0** | January 2026
+end note
+
+@enduml

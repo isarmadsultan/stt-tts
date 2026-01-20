@@ -1,15 +1,3 @@
-"""
-Updated Main Application with SOLID TTS Integration
-====================================================
-
-Key Changes:
-1. Integrated new SOLID-compliant TTS service
-2. Added proper dependency injection
-3. Enhanced error handling and cleanup
-4. Improved streaming pipeline coordination
-5. Better separation of concerns
-"""
-
 import os
 import tempfile
 import time
@@ -871,5 +859,3 @@ async def root():
             "Conversation history management"
         ]
     }
-
-

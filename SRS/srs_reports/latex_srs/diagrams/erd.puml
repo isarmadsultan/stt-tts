@@ -1,0 +1,140 @@
+@startuml erd
+!theme plain
+
+skinparam {
+    BackgroundColor white
+    DefaultFontName "Latin Modern Roman"
+    DefaultFontSize 8
+    DefaultFontColor #2C3E50
+    Shadowing false
+    RoundCorner 4
+    Padding 8
+    Linetype ortho
+}
+
+skinparam class {
+    BackgroundColor #F8FAFB
+    BorderColor #34495E
+    FontColor #2C3E50
+    AttributeFontColor #34495E
+    BorderThickness 1.2
+    ArrowColor #34495E
+    ArrowThickness 1.2
+}
+
+!define PK <color:#E53935><b>PK</b></color>
+!define FK <color:#2E86AB><b>FK</b></color>
+!define UK <color:#6A4C93><b>UK</b></color>
+
+' ===== SAAS PLATFORM =====
+entity "**Client**" as client {
+    PK id : UUID
+    --
+    name : VARCHAR(255)
+    UK email : VARCHAR(255)
+    UK api_key : VARCHAR(64)
+    subscription_tier : ENUM
+    created_at : TIMESTAMP
+    is_active : BOOLEAN
+}
+
+entity "**FeatureToggle**" as toggle {
+    PK id : UUID
+    --
+    FK client_id : UUID
+    text_enabled : BOOLEAN
+    voice_enabled : BOOLEAN
+    auto_scraping : BOOLEAN
+    scrape_frequency : ENUM
+    update_approval : ENUM
+    created_at : TIMESTAMP
+}
+
+entity "**Session**" as session {
+    PK id : UUID
+    --
+    FK client_id : UUID
+    modality : ENUM
+    started_at : TIMESTAMP
+    ended_at : TIMESTAMP
+    status : ENUM
+}
+
+entity "**Message**" as message {
+    PK id : UUID
+    --
+    FK session_id : UUID
+    role : ENUM
+    content_text : TEXT
+    audio_url : VARCHAR(512)
+    created_at : TIMESTAMP
+    process_time_ms : INTEGER
+}
+
+' ===== CONTENT MANAGEMENT =====
+entity "**KnowledgeBase**" as kb {
+    PK id : UUID
+    --
+    FK client_id : UUID
+    name : VARCHAR(255)
+    source_type : ENUM
+    created_at : TIMESTAMP
+}
+
+entity "**ContentItem**" as content {
+    PK id : UUID
+    --
+    FK knowledge_base_id : UUID
+    content_type : ENUM
+    source_url : VARCHAR(512)
+    content_hash : VARCHAR(64)
+    status : ENUM
+    created_at : TIMESTAMP
+    updated_at : TIMESTAMP
+}
+
+entity "**StructuredContent**" as structured {
+    PK id : UUID
+    --
+    FK content_item_id : UUID
+    schema_name : VARCHAR(100)
+    data_json : JSONB
+    indexed_fields : TEXT[]
+}
+
+entity "**DOMSnapshot**" as snapshot {
+    PK id : UUID
+    --
+    FK knowledge_base_id : UUID
+    page_url : VARCHAR(512)
+    dom_content : TEXT
+    screenshot_url : VARCHAR(512)
+    captured_at : TIMESTAMP
+    is_baseline : BOOLEAN
+}
+
+entity "**ChangeLog**" as changelog {
+    PK id : UUID
+    --
+    FK snapshot_id : UUID
+    FK content_item_id : UUID
+    change_type : ENUM
+    old_hash : VARCHAR(64)
+    new_hash : VARCHAR(64)
+    detected_at : TIMESTAMP
+    approved_at : TIMESTAMP
+    approved_by : VARCHAR(100)
+}
+
+' ===== RELATIONSHIPS =====
+client ||--o{ kb
+client ||--|| toggle
+client ||--o{ session
+session ||--o{ message
+kb ||--o{ content
+kb ||--o{ snapshot
+content ||--o| structured
+snapshot ||--o{ changelog
+content ||--o{ changelog
+
+@enduml

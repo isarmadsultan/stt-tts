@@ -1,0 +1,127 @@
+@startuml usecase
+!theme plain
+
+skinparam {
+    BackgroundColor white
+    DefaultFontName "Latin Modern Roman"
+    DefaultFontSize 8
+    DefaultFontColor #2C3E50
+    Shadowing false
+    RoundCorner 4
+    Padding 6
+    Linetype ortho
+}
+
+skinparam actor {
+    BackgroundColor #E8F4F8
+    BorderColor #2E86AB
+    FontColor #2C3E50
+    FontSize 8
+    BorderThickness 1.2
+}
+
+skinparam usecase {
+    BackgroundColor #F8FAFB
+    BorderColor #34495E
+    FontColor #2C3E50
+    BorderThickness 1.2
+    FontSize 7
+}
+
+skinparam package {
+    BackgroundColor white
+    BorderColor #BDC3C7
+    FontColor #2C3E50
+    BorderThickness 1
+    FontSize 8
+}
+
+skinparam arrow {
+    Color #34495E
+    Thickness 1.2
+}
+
+left to right direction
+
+' ===== ACTORS =====
+actor "End User" as user
+actor "Website\nOwner" as owner
+actor "System\nAdmin" as admin
+
+package "VocalizeWeb Platform" {
+    
+    ' ===== USER INTERACTION =====
+    package "User Interaction" {
+        usecase "Query via\nText Chat" as UC_TEXT
+        usecase "Query via\nVoice" as UC_VOICE
+        usecase "View\nTranscript" as UC_TRANSCRIPT
+        usecase "End\nSession" as UC_END
+    }
+    
+    ' ===== CONTENT MANAGEMENT =====
+    package "Content Management" {
+        usecase "Upload\nDocuments" as UC_UPLOAD
+        usecase "Configure\nScraping" as UC_SCRAPE
+        usecase "Define\nSchemas" as UC_SCHEMA
+        usecase "Review DOM\nChanges" as UC_REVIEW
+        usecase "Approve\nUpdates" as UC_APPROVE
+    }
+    
+    ' ===== CONFIGURATION =====
+    package "Configuration" {
+        usecase "Feature\nToggles" as UC_TOGGLE
+        usecase "Interaction\nMode" as UC_MODE
+        usecase "API\nKeys" as UC_API
+        usecase "Update\nFrequency" as UC_FREQ
+    }
+    
+    ' ===== ANALYTICS =====
+    package "Analytics" {
+        usecase "Conversation\nHistory" as UC_HISTORY
+        usecase "Usage\nAnalytics" as UC_ANALYTICS
+        usecase "Change\nLogs" as UC_LOGS
+        usecase "Export\nReports" as UC_EXPORT
+    }
+    
+    ' ===== ADMINISTRATION =====
+    package "Administration" {
+        usecase "System\nHealth" as UC_HEALTH
+        usecase "Manage\nClients" as UC_CLIENTS
+        usecase "Override\nClassification" as UC_OVERRIDE
+    }
+}
+
+' ===== USER RELATIONSHIPS =====
+user --> UC_TEXT
+user --> UC_VOICE
+user --> UC_TRANSCRIPT
+user --> UC_END
+
+' ===== OWNER RELATIONSHIPS =====
+owner --> UC_UPLOAD
+owner --> UC_SCRAPE
+owner --> UC_SCHEMA
+owner --> UC_REVIEW
+owner --> UC_APPROVE
+owner --> UC_TOGGLE
+owner --> UC_MODE
+owner --> UC_API
+owner --> UC_FREQ
+owner --> UC_HISTORY
+owner --> UC_ANALYTICS
+owner --> UC_LOGS
+owner --> UC_EXPORT
+
+' ===== ADMIN RELATIONSHIPS =====
+admin --> UC_HEALTH
+admin --> UC_CLIENTS
+admin --> UC_OVERRIDE
+admin ..> UC_HISTORY
+admin ..> UC_LOGS
+
+' ===== USE CASE RELATIONSHIPS =====
+UC_UPLOAD ..> UC_SCHEMA : <<include>>
+UC_SCRAPE ..> UC_REVIEW : <<triggers>>
+UC_REVIEW ..> UC_APPROVE : <<precedes>>
+
+@enduml

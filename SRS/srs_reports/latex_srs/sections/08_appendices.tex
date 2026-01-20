@@ -1,0 +1,218 @@
+% Appendices - Revised for Intelligent Content Management Platform
+\appendix
+\addcontentsline{toc}{chapter}{Appendices}
+
+\chapter{API Specification Examples}
+
+\section{Query Endpoints}
+
+\subsection{Text Query}
+
+\textbf{Endpoint:} POST /api/v1/query
+
+\textbf{Headers:}
+\begin{lstlisting}
+Authorization: Bearer <API_KEY>
+Content-Type: application/json
+\end{lstlisting}
+
+\textbf{Request Body:}
+\begin{lstlisting}
+{
+  "session_id": "sess_7f8a9b0c",
+  "query": "What are your shipping options?",
+  "modality": "text"
+}
+\end{lstlisting}
+
+\textbf{Response:}
+\begin{lstlisting}
+{
+  "message_id": "msg_1a2b3c4d",
+  "response": "We offer standard, express...",
+  "sources": [
+    {"type": "structured", "ref": "shipping_policies"},
+    {"type": "unstructured", "ref": "faq_chunk_42"}
+  ],
+  "processing_time_ms": 2340
+}
+\end{lstlisting}
+
+\subsection{Voice Query}
+
+\textbf{Endpoint:} POST /api/v1/voice-query
+
+\textbf{Request Body:} multipart/form-data with audio file
+\begin{lstlisting}
+{
+  "session_id": "sess_7f8a9b0c",
+  "audio": <binary>,
+  "format": "wav"
+}
+\end{lstlisting}
+
+\textbf{Response:}
+\begin{lstlisting}
+{
+  "message_id": "msg_1a2b3c4d",
+  "transcript": "What are your shipping options?",
+  "response_text": "We offer standard, express...",
+  "response_audio_url": "https://cdn.vocalizeweb.com/...",
+  "processing_time_ms": 4320
+}
+\end{lstlisting}
+
+\section{Content Management Endpoints}
+
+\subsection{Configure Scraping}
+
+\textbf{Endpoint:} POST /api/v1/scraping/configure
+
+\begin{lstlisting}
+{
+  "pages": [
+    {
+      "url": "https://example.com/products",
+      "content_type": "structured",
+      "schema": "product_catalog"
+    },
+    {
+      "url": "https://example.com/faq",
+      "content_type": "unstructured"
+    }
+  ],
+  "frequency": "daily"
+}
+\end{lstlisting}
+
+\subsection{Get DOM Changes}
+
+\textbf{Endpoint:} GET /api/v1/changes?status=pending
+
+\begin{lstlisting}
+{
+  "changes": [
+    {
+      "id": "chg_abc123",
+      "page_url": "https://example.com/products",
+      "change_type": "content_update",
+      "detected_at": "2026-01-13T08:00:00Z",
+      "affected_items": 3,
+      "status": "pending_approval"
+    }
+  ]
+}
+\end{lstlisting}
+
+\chapter{Content Schema Examples}
+
+\section{Product Catalog Schema}
+
+\begin{lstlisting}
+{
+  "schema_name": "product_catalog",
+  "fields": [
+    {"name": "product_id", "type": "string", "required": true},
+    {"name": "name", "type": "string", "required": true},
+    {"name": "price", "type": "decimal", "required": true},
+    {"name": "currency", "type": "string", "default": "USD"},
+    {"name": "availability", "type": "enum", 
+     "values": ["in_stock", "out_of_stock", "preorder"]},
+    {"name": "description", "type": "text", "embed": true},
+    {"name": "category", "type": "string", "indexed": true}
+  ],
+  "dom_selectors": {
+    "container": ".product-card",
+    "product_id": "[data-product-id]",
+    "name": ".product-title",
+    "price": ".price-current",
+    "availability": ".stock-status"
+  }
+}
+\end{lstlisting}
+
+\section{Faculty Directory Schema}
+
+\begin{lstlisting}
+{
+  "schema_name": "faculty_directory",
+  "fields": [
+    {"name": "name", "type": "string", "required": true},
+    {"name": "department", "type": "string", "indexed": true},
+    {"name": "designation", "type": "string"},
+    {"name": "email", "type": "email"},
+    {"name": "phone", "type": "string"},
+    {"name": "office", "type": "string"},
+    {"name": "bio", "type": "text", "embed": true},
+    {"name": "courses", "type": "array[string]"}
+  ]
+}
+\end{lstlisting}
+
+\chapter{Feature Toggle Configuration}
+
+\section{Toggle Options}
+
+\begin{lstlisting}
+{
+  "client_id": "client_abc123",
+  "toggles": {
+    "interaction_mode": "both",  // text | voice | both
+    "auto_scraping": true,
+    "scrape_frequency": "daily", // hourly | daily | weekly | manual
+    "update_approval": "manual", // manual | automatic
+    "conversation_storage": "full", // full | summary | none
+    "analytics_access": "admin"  // admin | shared | none
+  }
+}
+\end{lstlisting}
+
+\chapter{Server Specifications}
+
+\section{Production Requirements}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Component} & \textbf{Specification} \\
+\hline
+Application Servers & 4 cores, 16 GB RAM, Python 3.10+ \\
+\hline
+PostgreSQL Database & 4 cores, 32 GB RAM, 500 GB SSD \\
+\hline
+Vector Database & Weaviate cluster or Redis with RediSearch \\
+\hline
+DOM Scanner Workers & 2 cores, 8 GB RAM per worker (Playwright) \\
+\hline
+Vision Model Inference & GPU recommended (NVIDIA T4 or better) \\
+\hline
+Network & 1 Gbps, low latency to AI service providers \\
+\hline
+\end{tabular}
+\end{table}
+
+\chapter{Glossary}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|p{10cm}|}
+\hline
+\textbf{Term} & \textbf{Definition} \\
+\hline
+Content Type & Classification of content as structured, unstructured, or semi-structured \\
+\hline
+DOM Snapshot & Stored representation of a webpage's Document Object Model at a point in time \\
+\hline
+Feature Toggle & Configuration flag controlling enabled capabilities per client \\
+\hline
+Vision Comparator & AI model comparing DOM snapshots to detect changes \\
+\hline
+Schema-Driven Ingestion & Extracting content according to predefined field definitions \\
+\hline
+Targeted Update & Updating only content affected by detected changes \\
+\hline
+Multi-Modal & Supporting multiple interaction modalities (text and voice) \\
+\hline
+\end{tabular}
+\end{table}

@@ -1,0 +1,229 @@
+\documentclass[12pt,a4paper]{report}
+
+% ============================================
+% PROFESSIONAL PACKAGES
+% ============================================
+% Encoding and Fonts
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{times}
+\usepackage{amssymb}  % Provides \checkmark symbol
+\usepackage{microtype}  % Professional typography
+
+% Page Layout
+\usepackage[left=3cm,right=2.5cm,top=2.5cm,bottom=2.5cm]{geometry}
+\usepackage{setspace}
+
+% Headers and Footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\itshape VocalizeWeb SRS}
+\fancyhead[R]{\footnotesize\itshape Namal University}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{
+    \fancyhf{}
+    \fancyfoot[C]{\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+}
+
+% Graphics and Colors
+\usepackage{graphicx}
+\usepackage{rotating}  % For rotated table headers
+\usepackage[dvipsnames,svgnames,table]{xcolor}
+
+% Define Professional Color Scheme
+\definecolor{primaryblue}{RGB}{25, 118, 210}
+\definecolor{secondaryorange}{RGB}{245, 124, 0}
+\definecolor{accentgreen}{RGB}{56, 142, 60}
+\definecolor{codebg}{RGB}{248, 249, 250}
+\definecolor{lightgray}{RGB}{240, 240, 240}
+
+% Tables
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{booktabs}  % Professional table rules
+\usepackage{multirow}
+\usepackage{colortbl}
+
+% Hyperlinks and References
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=primaryblue,
+    filecolor=magenta,      
+    urlcolor=primaryblue,
+    citecolor=accentgreen,
+    pdftitle={VocalizeWeb Software Requirements Specification},
+    pdfauthor={Sarmad Sultan, Shehzana Bibi},
+    pdfsubject={Voice-to-Voice AI Assistant SRS},
+    pdfkeywords={SRS, Voice AI, SaaS, RAG, VocalizeWeb},
+    bookmarksnumbered=true,
+    bookmarksopen=true,
+}
+\usepackage[capitalise,noabbrev]{cleveref}  % Smart references
+
+% Title and Section Formatting
+\usepackage{titlesec}
+\usepackage{tocloft}
+
+\titleformat{\chapter}[display]
+{\normalfont\huge\bfseries\color{primaryblue}}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-50pt}{40pt}
+
+\titleformat{\section}
+{\normalfont\fontsize{14}{17}\bfseries\color{primaryblue}}{\thesection}{1em}{}
+
+\titleformat{\subsection}
+{\normalfont\fontsize{12}{14.5}\bfseries}{\thesubsection}{1em}{}
+
+\titleformat{\subsubsection}
+{\normalfont\fontsize{12}{14.5}\bfseries\itshape}{\thesubsubsection}{1em}{}
+
+% Code Listings
+\usepackage{listings}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{gray},
+    frame=single,
+    framerule=0pt,
+    framexleftmargin=5pt,
+    framexrightmargin=5pt,
+    framextopmargin=5pt,
+    framexbottommargin=5pt,
+    keywordstyle=\color{primaryblue}\bfseries,
+    numbers=none,
+    showspaces=false,
+    showstringspaces=false,
+    stringstyle=\color{accentgreen},
+    tabsize=2,
+    xleftmargin=10pt,
+    xrightmargin=10pt,
+}
+\lstset{style=mystyle}
+
+% Floats and Captions
+\usepackage{float}
+\usepackage{caption}
+\captionsetup{
+    font={small},
+    labelfont={bf,color=primaryblue},
+    labelsep=period,
+    justification=centering
+}
+\captionsetup[table]{position=top,skip=5pt}
+\captionsetup[figure]{position=bottom,skip=5pt}
+
+% Boxes and Frames
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+
+% Info Boxes
+\newtcolorbox{infobox}[1][]{
+    colback=blue!5,
+    colframe=primaryblue,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners,
+    boxrule=1pt,
+    left=5pt,
+    right=5pt,
+    top=5pt,
+    bottom=5pt,
+}
+
+\newtcolorbox{warningbox}[1][]{
+    colback=orange!5,
+    colframe=secondaryorange,
+    fonttitle=\bfseries,
+    title=#1,
+    sharp corners,
+    boxrule=1pt,
+}
+
+% Lists
+\usepackage{enumitem}
+\setlist[itemize]{leftmargin=*,itemsep=2pt,parsep=2pt}
+\setlist[enumerate]{leftmargin=*,itemsep=2pt,parsep=2pt}
+
+% Line Spacing
+\onehalfspacing
+\setlength{\parskip}{6pt}
+
+% Justification
+\usepackage{ragged2e}
+\justifying
+
+% Watermark for Draft (comment out for final)
+% \usepackage{draftwatermark}
+% \SetWatermarkText{DRAFT}
+% \SetWatermarkScale{0.5}
+% \SetWatermarkLightness{0.9}
+
+% ============================================
+% DOCUMENT BEGINS
+% ============================================
+\begin{document}
+
+% Cover Page (no headers)
+\pagestyle{empty}
+\include{sections/00_cover}
+
+% Declaration Page
+\pagestyle{plain}
+\include{sections/01_declaration}
+
+% Front Matter with Roman Numerals
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+% Abstract
+\include{sections/02_abstract}
+
+% Table of Contents
+\pagestyle{fancy}
+\tableofcontents
+\newpage
+
+% List of Figures
+\addcontentsline{toc}{chapter}{List of Figures}
+\listoffigures
+\newpage
+
+% List of Tables
+\addcontentsline{toc}{chapter}{List of Tables}
+\listoftables
+\newpage
+
+% ============================================
+% MAIN CONTENT - Arabic Numerals
+% ============================================
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% Chapter 1: Introduction
+\include{sections/03_introduction}
+
+% Chapter 2: System Description
+\include{sections/04_system_description}
+
+% Chapter 3: Analysis and Design
+\include{sections/05_analysis_design}
+
+% Chapter 4: Remaining Work
+\include{sections/06_remaining_work}
+
+% References
+\include{sections/07_references}
+
+% Appendices
+\include{sections/08_appendices}
+
+\end{document}

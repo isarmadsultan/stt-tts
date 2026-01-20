@@ -1,0 +1,120 @@
+@startuml architecture
+!theme plain
+
+skinparam {
+    BackgroundColor white
+    DefaultFontName "Latin Modern Roman"
+    DefaultFontSize 9
+    DefaultFontColor #2C3E50
+    Shadowing false
+    RoundCorner 4
+    Padding 8
+    ArrowColor #34495E
+    ArrowThickness 1.2
+    ParticipantPadding 10
+    BoxPadding 8
+    Linetype ortho
+}
+
+skinparam rectangle {
+    BackgroundColor<<client>> #E8F4F8
+    BorderColor<<client>> #2E86AB
+    BackgroundColor<<gateway>> #F0E6F6
+    BorderColor<<gateway>> #6A4C93
+    BackgroundColor<<engine>> #E8F5E9
+    BorderColor<<engine>> #43A047
+    BackgroundColor<<content>> #FFF3E0
+    BorderColor<<content>> #FB8C00
+    BackgroundColor<<storage>> #FFEBEE
+    BorderColor<<storage>> #E53935
+    BackgroundColor<<external>> #ECEFF1
+    BorderColor<<external>> #607D8B
+    BorderThickness 1.2
+    FontSize 8
+}
+
+skinparam package {
+    BackgroundColor white
+    BorderColor #BDC3C7
+    BorderThickness 1
+    FontSize 9
+    FontStyle bold
+}
+
+
+
+' ===== CLIENT LAYER =====
+package "Client Layer" as client_layer {
+    rectangle "Text\nWidget" as txt <<client>>
+    rectangle "Voice\nWidget" as vox <<client>>
+    rectangle "Admin\nDashboard" as adm <<client>>
+}
+
+' ===== GATEWAY =====
+rectangle "API Gateway\n//auth · rate limit · routing//" as gtw <<gateway>>
+
+' ===== PROCESSING LAYER =====
+package "Processing Layer" as proc_layer {
+    rectangle "Query\nEngine" as qry <<engine>>
+    rectangle "Voice\nEngine" as vce <<engine>>
+    rectangle "Content\nRouter" as rtr <<engine>>
+}
+
+' ===== CONTENT MANAGEMENT =====
+package "Content Management" as content_layer {
+    rectangle "DOM\nScanner" as scn <<content>>
+    rectangle "Vision\nCompare" as vsn <<content>>
+    rectangle "Update\nOrchestrator" as orch <<content>>
+    rectangle "Schema\nProcessor" as schm <<content>>
+}
+
+' ===== EXTERNAL SERVICES =====
+package "External AI Services" as external_layer {
+    rectangle "Whisper\n//STT//" as wsp <<external>>
+    rectangle "GPT-4o\n//LLM//" as gpt <<external>>
+    rectangle "OpenAI\n//TTS//" as tts <<external>>
+}
+
+' ===== STORAGE =====
+package "Data Storage Layer" as storage_layer {
+    rectangle "PostgreSQL\n//structured//" as pg <<storage>>
+    rectangle "Vector DB\n//embeddings//" as vdb <<storage>>
+    rectangle "Object Store\n//snapshots//" as obj <<storage>>
+}
+
+' ===== PRIMARY FLOW CONNECTIONS =====
+txt --> gtw
+vox --> gtw
+adm --> gtw
+
+gtw --> qry
+gtw --> vce
+gtw --> rtr
+
+' ===== QUERY ENGINE CONNECTIONS =====
+qry --> gpt : LLM query
+qry --> vdb : vector search
+qry --> pg : metadata
+
+' ===== VOICE ENGINE CONNECTIONS =====
+vce --> wsp : transcribe
+vce --> qry : process
+vce --> tts : synthesize
+
+' ===== CONTENT ROUTING =====
+rtr --> schm : classify
+rtr --> vdb : embed
+
+' ===== CONTENT MANAGEMENT FLOW =====
+scn --> obj : store DOM
+obj --> vsn : compare
+vsn --> orch : trigger
+orch --> schm : update
+orch --> vdb : reindex
+
+' ===== SCHEMA TO STORAGE =====
+schm --> pg : persist
+
+
+
+@enduml

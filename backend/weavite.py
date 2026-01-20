@@ -86,7 +86,6 @@ client.collections.create(
         dynamic_ef_factor=8,           # Multiplier for dynamic ef
         vector_cache_max_objects=100000,  # Cache vectors in memory
         flat_search_cutoff=40000,     # Use flat search for small datasets
-        skip=False,                    # Enable indexing
         quantizer=None                 # No quantization for maximum quality
     )
 )
